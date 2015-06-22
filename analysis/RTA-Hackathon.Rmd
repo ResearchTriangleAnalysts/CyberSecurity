@@ -1,0 +1,129 @@
+---
+title: "Cyber-Security Hackathon"
+author: "Gjeltema"
+date: "05/21/2015"
+output: html_document
+---
+Hackathon for Research Triangle Analysts  
+http://www.meetup.com/de/Research-Triangle-Analysts/events/221861919/  
+R code for a basic analysis  
+
+# Packages
+```{r, warning=FALSE, message=FALSE}
+# install.packages("GGally"); install.packages("ggplot2");
+# install.packages("dplyr"); install.packages("magrittr");
+# install.packages("tidyr");
+suppressPackageStartupMessages(library("ggplot2"))
+suppressPackageStartupMessages(library("dplyr"))
+suppressPackageStartupMessages(library("magrittr"))
+suppressPackageStartupMessages(library("tidyr"))
+```
+
+# Load data & view summary statistics
+```{r loadData}
+evilprog <- read.csv("evilProgram_flat.csv", stringsAsFactors = FALSE);
+evilprog.orig <- evilprog;
+evilprog <- evilprog.orig;
+dim(evilprog); names(evilprog);
+str(evilprog); # summary(evilprog);
+
+# choose the apropriate data type for each variable
+evilprog %<>% mutate(Protocol = as.factor(Protocol),
+                     Source = as.factor(Source),
+                     Destination = as.factor(Destination))
+```
+
+## Why so many variables? Is there even anything in them?
+```{r analyzeVariables}
+evilprog %>% 
+  select(starts_with("Additional")) %>% 
+  mutate_each(funs(factor)) %>% 
+  summary();
+
+# looks like additional info variables 9 till the last one are mostly empty, 
+# except for a few observations
+evilprog %>% filter(AdditionalInfo9 != "") %>% count();
+evilprog %>%
+  filter(AdditionalInfo9 != "") %>%
+  select(num_range("AdditionalInfo",7:30)) %>% 
+  distinct() %>% count();
+
+# drop the columns that seem redundant
+evilprog %<>% select(No, Time, Source, Destination, Protocol, Length, 
+                     num_range("AdditionalInfo",1:8))
+
+summary(evilprog)
+```
+
+# Let's look at the data
+```{r plotData}
+GGally::ggpairs(evilprog, columns = 2:6, title = "Scatter Plot")
+```
+
+## Suspiciously much traffic any time? (e.g. lots of traffic in short time span)
+```{r}
+ggplot(data=evilprog, aes(x=Time)) + 
+  geom_histogram(binwidth=100) + 
+  ggtitle("Any suspicious events when counting traffic?")
+```
+
+## Traffic volumes (length) over time
+```{r}
+ggplot(evilprog, aes(x=Time, y=Length, color=Protocol)) + 
+  geom_point() + 
+  ggtitle("Any suspicious events in the traffic volumes over time?")
+```
+
+## Traffic by type of protocol
+```{r}
+ggplot(data=evilprog, aes(x=Length, fill=Protocol)) + 
+  geom_bar() + 
+  facet_wrap(~Protocol, scales="free") + 
+  theme(legend.position="none") + 
+  ggtitle("Any unusual packet lengths per protocol?")
+```
+
+## Big volume of packet lengths from certain sources or to certain destinations?
+```{r}
+big_sizes.source <-
+evilprog %>% 
+  filter(Length>60) %>% 
+  select(Source, Destination, Length) %>%
+  group_by(Source) %>%
+  summarize(total_traffic=sum(Length)) %>%
+  arrange(desc(total_traffic));
+
+big_sizes.source %>% 
+ggplot(., aes(x=reorder(Source, total_traffic), y=total_traffic)) + 
+  xlab("Source IP address") + geom_point() + coord_flip() +
+  ggtitle("Sources of heavy traffic?")
+
+
+
+big_sizes.destination <-
+evilprog %>% 
+  filter(Length>60) %>% 
+  select(Source, Destination, Length) %>%
+  group_by(Destination) %>%
+  summarize(total_traffic=sum(Length)) %>%
+  arrange(desc(total_traffic));
+
+big_sizes.destination %>%
+ggplot(., aes(x=reorder(Destination, total_traffic), y=total_traffic)) + 
+  xlab("Destination IP address") + 
+  geom_point() + coord_flip() + 
+  ggtitle("Destinations with heavy traffic?")
+
+
+
+big_sizes.all <-
+evilprog %>% 
+  filter(Length>60) %>% 
+  select(Source, Destination, Length) %>%
+  group_by(Source, Destination) %>%
+  summarize(total_traffic=sum(Length)) %>%
+  data.frame() %>%
+  arrange(desc(total_traffic));
+```
+
+
